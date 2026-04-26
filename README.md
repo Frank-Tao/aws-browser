@@ -67,9 +67,16 @@ JSON mode is useful if multipart upload is blocked by network/proxy policy.
 
 ## Frontend Deploy (Vercel)
 
-Set Vercel project env vars:
-- `AWS_BROWSER_API_BASE_URL=https://<api-id>.execute-api.ap-southeast-2.amazonaws.com`
-- `AWS_BROWSER_API_TOKEN=<token or empty>`
+GitHub Actions now resolves backend `ApiUrl` from CloudFormation automatically and injects it into frontend build (`AWS_BROWSER_API_BASE_URL`).
+
+Required GitHub secrets for frontend workflow:
+- `VERCEL_TOKEN`
+- `VERCEL_ORG_ID`
+- `VERCEL_PROJECT_ID`
+- `AWS_ROLE_TO_ASSUME` (used to read CloudFormation output)
+
+Optional:
+- `AWS_BROWSER_API_TOKEN` (if backend token auth is enabled)
 
 Deploy:
 ```bash
@@ -106,6 +113,8 @@ aws cloudformation describe-stacks \
   --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" \
   --output text
 ```
+
+Backend GitHub Actions workflow now auto-runs a frontend deploy job after backend deploy, using the latest API URL.
 
 ## Notes
 

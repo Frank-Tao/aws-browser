@@ -21,6 +21,8 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    outputs:
+      api_url: ${{ steps.resolve_api_url.outputs.api_url }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -71,3 +73,53 @@ jobs:
               MaxLambdaConcurrency="${{ vars.MAX_LAMBDA_CONCURRENCY || '3' }}" \
               ApiThrottleBurstLimit="${{ vars.API_THROTTLE_BURST_LIMIT || '3' }}" \
               ApiThrottleRateLimit="${{ vars.API_THROTTLE_RATE_LIMIT || '3' }}"
+
+      - name: Resolve API URL
+        id: resolve_api_url
+        run: |
+          API_URL=$(aws cloudformation describe-stacks \
+            --stack-name "${{ vars.BACKEND_STACK_NAME || 'aws-browser-api' }}" \
+            --region "${{ vars.AWS_REGION || 'ap-southeast-2' }}" \
+            --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue | [0]" \
+            --output text)
+          test -n "$API_URL" || (echo "Backend API URL not found in CloudFormation outputs" && exit 1)
+          test "$API_URL" != "None" || (echo "Backend API URL is empty (stack output missing)" && exit 1)
+          echo "api_url=$API_URL" >> "$GITHUB_OUTPUT"
+
+  deploy_frontend:
+    needs: deploy
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate Vercel secrets
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          test -n "$VERCEL_TOKEN" || (echo "Missing GitHub secret: VERCEL_TOKEN" && exit 1)
+          test -n "$VERCEL_ORG_ID" || (echo "Missing GitHub secret: VERCEL_ORG_ID" && exit 1)
+          test -n "$VERCEL_PROJECT_ID" || (echo "Missing GitHub secret: VERCEL_PROJECT_ID" && exit 1)
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Deploy Frontend With Latest API URL
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          AWS_BROWSER_API_BASE_URL: ${{ needs.deploy.outputs.api_url }}
+          AWS_BROWSER_API_TOKEN: ${{ secrets.AWS_BROWSER_API_TOKEN }}
+        run: |
+          npm install --global vercel@latest
+          vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+          vercel build --prod --token="$VERCEL_TOKEN"
+          vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
