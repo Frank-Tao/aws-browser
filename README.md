@@ -114,7 +114,7 @@ aws cloudformation describe-stacks \
   --output text
 ```
 
-Backend GitHub Actions workflow now auto-runs a frontend deploy job after backend deploy, using the latest API URL.
+Backend GitHub Actions workflow now compares API URL before/after deploy and only auto-runs a frontend deploy when the API URL actually changes.
 
 ## Notes
 

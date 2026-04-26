@@ -131,6 +131,7 @@ async function startUpload() {
       method: "POST",
       headers: jsonHeaders(),
       body: JSON.stringify({
+        destination_prefix: state.currentPrefix,
         ignore_obsidian: false,
         files: manifestFiles,
       }),
@@ -204,9 +205,7 @@ async function startUpload() {
 }
 
 async function loadS3Prefix(prefix, options = {}) {
-  state.currentPrefix = prefix || "";
-  els.breadcrumb.textContent = `/${state.currentPrefix}`;
-  els.upButton.disabled = !state.currentPrefix;
+  setCurrentPrefix(prefix || "");
   if (options.showLoading) {
     els.s3FileList.innerHTML = s3EmptyHtml("Loading");
   }
@@ -232,6 +231,7 @@ async function refreshTree() {
 }
 
 async function toggleFolder(prefix) {
+  setCurrentPrefix(prefix || "");
   if (state.expandedPrefixes.has(prefix)) {
     state.expandedPrefixes.delete(prefix);
     renderS3Tree();
@@ -373,9 +373,15 @@ async function deleteObject(key) {
   const ok = window.confirm(`Delete ${key}?`);
   if (!ok) return;
 
-  await requestJson(`/api/object?key=${encodeURIComponent(key)}`, {
-    method: "DELETE",
-  });
+  try {
+    await requestJson(`/api/object?key=${encodeURIComponent(key)}`, {
+      method: "DELETE",
+    });
+  } catch (error) {
+    setProgress(0, `Delete failed: ${error.message}`);
+    window.alert(`Delete failed: ${error.message}`);
+    return;
+  }
 
   if (state.selectedKey === key) {
     state.selectedKey = "";
@@ -448,6 +454,12 @@ function setLeftPanePercent(percent) {
 function currentLeftPanePercent() {
   const value = getComputedStyle(els.layout).getPropertyValue("--left-pane").trim();
   return String(Number.parseFloat(value) || 60);
+}
+
+function setCurrentPrefix(prefix) {
+  state.currentPrefix = prefix || "";
+  els.breadcrumb.textContent = `/${state.currentPrefix}`;
+  els.upButton.disabled = !state.currentPrefix;
 }
 
 function renderSelectedRow() {

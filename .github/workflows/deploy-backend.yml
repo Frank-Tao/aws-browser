@@ -23,6 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       api_url: ${{ steps.resolve_api_url.outputs.api_url }}
+      api_url_changed: ${{ steps.compare_api_url.outputs.api_url_changed }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -48,6 +49,22 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ vars.AWS_REGION || 'ap-southeast-2' }}
+
+      - name: Resolve API URL before deploy
+        id: resolve_api_url_before
+        run: |
+          set +e
+          API_URL_BEFORE=$(aws cloudformation describe-stacks \
+            --stack-name "${{ vars.BACKEND_STACK_NAME || 'aws-browser-api' }}" \
+            --region "${{ vars.AWS_REGION || 'ap-southeast-2' }}" \
+            --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue | [0]" \
+            --output text 2>/dev/null)
+          STATUS=$?
+          set -e
+          if [ "$STATUS" -ne 0 ] || [ -z "$API_URL_BEFORE" ] || [ "$API_URL_BEFORE" = "None" ]; then
+            API_URL_BEFORE=""
+          fi
+          echo "api_url_before=$API_URL_BEFORE" >> "$GITHUB_OUTPUT"
 
       - name: Build
         run: sam build --use-container
@@ -86,8 +103,22 @@ jobs:
           test "$API_URL" != "None" || (echo "Backend API URL is empty (stack output missing)" && exit 1)
           echo "api_url=$API_URL" >> "$GITHUB_OUTPUT"
 
+      - name: Compare API URL before and after deploy
+        id: compare_api_url
+        run: |
+          BEFORE="${{ steps.resolve_api_url_before.outputs.api_url_before }}"
+          AFTER="${{ steps.resolve_api_url.outputs.api_url }}"
+          if [ -z "$BEFORE" ] || [ "$BEFORE" != "$AFTER" ]; then
+            echo "api_url_changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "api_url_changed=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "API URL before: ${BEFORE:-<none>}"
+          echo "API URL after: $AFTER"
+
   deploy_frontend:
     needs: deploy
+    if: ${{ needs.deploy.outputs.api_url_changed == 'true' }}
     runs-on: ubuntu-latest
     defaults:
       run:
