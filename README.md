@@ -89,7 +89,7 @@ npm run deploy:vercel
 ```bash
 cd /Users/franktao/codes/aws-browser
 sam validate --lint
-sam build --use-container
+sam build --cached --parallel
 sam deploy \
   --stack-name aws-browser-api \
   --region ap-southeast-2 \

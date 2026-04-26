@@ -51,7 +51,7 @@ Globals:
     Timeout: 60
     MemorySize: 1024
     Architectures:
-      - arm64
+      - x86_64
     Environment:
       Variables:
         S3_BUCKET: !Ref S3Bucket

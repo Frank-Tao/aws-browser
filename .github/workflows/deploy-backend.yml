@@ -67,7 +67,7 @@ jobs:
           echo "api_url_before=$API_URL_BEFORE" >> "$GITHUB_OUTPUT"
 
       - name: Build
-        run: sam build --use-container
+        run: sam build --cached --parallel
 
       - name: Deploy
         run: |
