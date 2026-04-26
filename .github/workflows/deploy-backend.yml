@@ -70,26 +70,49 @@ jobs:
         run: sam build --cached --parallel
 
       - name: Deploy
+        env:
+          AWS_BROWSER_S3_BUCKET: ${{ secrets.AWS_BROWSER_S3_BUCKET }}
+          AWS_REGION_VALUE: ${{ vars.AWS_REGION || 'ap-southeast-2' }}
+          S3_BASE_PREFIX: ${{ vars.S3_BASE_PREFIX }}
+          FRONTEND_ORIGIN: ${{ vars.FRONTEND_ORIGIN }}
+          AWS_BROWSER_API_TOKEN: ${{ secrets.AWS_BROWSER_API_TOKEN }}
+          MAX_FILE_BYTES_VALUE: ${{ vars.MAX_FILE_BYTES || '6000000' }}
+          MAX_MANIFEST_FILES_VALUE: ${{ vars.MAX_MANIFEST_FILES || '1000' }}
+          SESSION_MANIFEST_PREFIX_VALUE: ${{ vars.SESSION_MANIFEST_PREFIX || '.aws-browser/sessions' }}
+          MAX_LAMBDA_CONCURRENCY_VALUE: ${{ vars.MAX_LAMBDA_CONCURRENCY || '3' }}
+          API_THROTTLE_BURST_LIMIT_VALUE: ${{ vars.API_THROTTLE_BURST_LIMIT || '3' }}
+          API_THROTTLE_RATE_LIMIT_VALUE: ${{ vars.API_THROTTLE_RATE_LIMIT || '3' }}
         run: |
+          PARAMS=()
+          PARAMS+=("S3Bucket=${AWS_BROWSER_S3_BUCKET}")
+          PARAMS+=("AwsRegionName=${AWS_REGION_VALUE}")
+          PARAMS+=("MaxFileBytes=${MAX_FILE_BYTES_VALUE}")
+          PARAMS+=("MaxManifestFiles=${MAX_MANIFEST_FILES_VALUE}")
+          PARAMS+=("SessionManifestPrefix=${SESSION_MANIFEST_PREFIX_VALUE}")
+          PARAMS+=("MaxLambdaConcurrency=${MAX_LAMBDA_CONCURRENCY_VALUE}")
+          PARAMS+=("ApiThrottleBurstLimit=${API_THROTTLE_BURST_LIMIT_VALUE}")
+          PARAMS+=("ApiThrottleRateLimit=${API_THROTTLE_RATE_LIMIT_VALUE}")
+
+          if [ -n "$S3_BASE_PREFIX" ]; then
+            PARAMS+=("S3BasePrefix=${S3_BASE_PREFIX}")
+          fi
+
+          if [ -n "$FRONTEND_ORIGIN" ]; then
+            PARAMS+=("AllowedOrigins=${FRONTEND_ORIGIN}")
+          fi
+
+          if [ -n "$AWS_BROWSER_API_TOKEN" ]; then
+            PARAMS+=("AppApiToken=${AWS_BROWSER_API_TOKEN}")
+          fi
+
           sam deploy \
             --stack-name "${{ vars.BACKEND_STACK_NAME || 'aws-browser-api' }}" \
-            --region "${{ vars.AWS_REGION || 'ap-southeast-2' }}" \
+            --region "${AWS_REGION_VALUE}" \
             --no-confirm-changeset \
             --no-fail-on-empty-changeset \
             --resolve-s3 \
             --capabilities CAPABILITY_IAM \
-            --parameter-overrides \
-              S3Bucket="${{ secrets.AWS_BROWSER_S3_BUCKET }}" \
-              AwsRegionName="${{ vars.AWS_REGION || 'ap-southeast-2' }}" \
-              S3BasePrefix="${{ vars.S3_BASE_PREFIX }}" \
-              AllowedOrigins="${{ vars.FRONTEND_ORIGIN || '*' }}" \
-              AppApiToken="${{ secrets.AWS_BROWSER_API_TOKEN }}" \
-              MaxFileBytes="${{ vars.MAX_FILE_BYTES || '6000000' }}" \
-              MaxManifestFiles="${{ vars.MAX_MANIFEST_FILES || '1000' }}" \
-              SessionManifestPrefix="${{ vars.SESSION_MANIFEST_PREFIX || '.aws-browser/sessions' }}" \
-              MaxLambdaConcurrency="${{ vars.MAX_LAMBDA_CONCURRENCY || '3' }}" \
-              ApiThrottleBurstLimit="${{ vars.API_THROTTLE_BURST_LIMIT || '3' }}" \
-              ApiThrottleRateLimit="${{ vars.API_THROTTLE_RATE_LIMIT || '3' }}"
+            --parameter-overrides "${PARAMS[@]}"
 
       - name: Resolve API URL
         id: resolve_api_url
