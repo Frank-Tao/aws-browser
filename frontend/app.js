@@ -7,6 +7,7 @@ const state = {
   basePrefix: "",
   backendConfigured: false,
   selectedKey: "",
+  previewObjectUrl: "",
   tree: new Map(),
   expandedPrefixes: new Set([""]),
   loadingPrefixes: new Set(),
@@ -370,12 +371,30 @@ function appendTreeRows(rows, prefix, depth) {
 }
 
 async function previewObject(key) {
-  openPreview(key, "Loading");
+  setPreviewLoading(key);
   try {
-    const data = await requestJson(`/api/read-text?key=${encodeURIComponent(key)}`);
-    openPreview(key, data.text);
+    const response = await fetch(apiUrl(`/api/read-text?key=${encodeURIComponent(key)}`), {
+      headers: authHeaders(),
+    });
+    if (response.ok) {
+      const data = await response.json();
+      if (isMarkdownFile(key, data.content_type)) {
+        renderMarkdownPreview(key, data.text);
+      } else {
+        renderTextPreview(key, data.text);
+      }
+      return;
+    }
+
+    const payload = await response.json().catch(() => null);
+    if (response.status === 415) {
+      await previewBinaryObject(key);
+      return;
+    }
+
+    renderPreviewMessage(key, payload?.detail || response.statusText || "Preview failed");
   } catch (error) {
-    openPreview(key, error.message);
+    renderPreviewMessage(key, error.message);
   }
 }
 
@@ -428,6 +447,43 @@ async function downloadCurrentPrefix() {
   }
 }
 
+async function previewBinaryObject(key) {
+  const response = await fetch(apiUrl(`/api/download?key=${encodeURIComponent(key)}`), {
+    headers: authHeaders(),
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null);
+    throw new Error(payload?.detail || response.statusText || "Preview failed");
+  }
+
+  const contentType = (response.headers.get("content-type") || "").toLowerCase();
+  const blob = await response.blob();
+
+  if (contentType.startsWith("image/") || isImageFile(key)) {
+    const objectUrl = URL.createObjectURL(blob);
+    renderImagePreview(key, objectUrl);
+    return;
+  }
+
+  if (contentType.includes("pdf") || isPdfFile(key)) {
+    const objectUrl = URL.createObjectURL(blob);
+    renderPdfPreview(key, objectUrl);
+    return;
+  }
+
+  if (contentType.startsWith("text/")) {
+    const text = await blob.text();
+    if (isMarkdownFile(key, contentType)) {
+      renderMarkdownPreview(key, text);
+    } else {
+      renderTextPreview(key, text);
+    }
+    return;
+  }
+
+  renderPreviewMessage(key, "Preview not available for this file type");
+}
+
 async function deleteObject(key) {
   const ok = window.confirm(`Delete ${key}?`);
   if (!ok) return;
@@ -443,10 +499,7 @@ async function deleteObject(key) {
   }
 
   if (state.selectedKey === key) {
-    state.selectedKey = "";
-    els.previewTitle.textContent = "No file selected";
-    els.previewContent.textContent = "Select a text file from the S3 browser.";
-    els.previewDownloadButton.disabled = true;
+    resetPreview();
   }
 
   state.tree.clear();
@@ -454,13 +507,89 @@ async function deleteObject(key) {
   await loadS3Prefix("", { showLoading: true });
 }
 
-function openPreview(title, content) {
-  state.selectedKey = title;
-  els.previewTitle.textContent = title;
-  els.previewContent.textContent = content;
-  els.previewDownloadButton.disabled = !state.selectedKey;
+function setPreviewLoading(key) {
+  setPreviewKey(key);
+  setPreviewMode("is-text");
+  releasePreviewObjectUrl();
+  els.previewContent.textContent = "Loading";
+}
+
+function renderPreviewMessage(key, message) {
+  setPreviewKey(key);
+  setPreviewMode("is-text");
+  releasePreviewObjectUrl();
+  els.previewContent.textContent = message;
+}
+
+function renderTextPreview(key, text) {
+  setPreviewKey(key);
+  setPreviewMode("is-text");
+  releasePreviewObjectUrl();
+  els.previewContent.textContent = text;
+}
+
+function renderMarkdownPreview(key, markdown) {
+  setPreviewKey(key);
+  setPreviewMode("is-markdown");
+  releasePreviewObjectUrl();
+  els.previewContent.innerHTML = markdownToHtml(markdown);
+}
+
+function renderImagePreview(key, objectUrl) {
+  setPreviewKey(key);
+  setPreviewMode("is-media");
+  releasePreviewObjectUrl();
+  state.previewObjectUrl = objectUrl;
+
+  const img = document.createElement("img");
+  img.className = "preview-image";
+  img.src = objectUrl;
+  img.alt = key;
+  els.previewContent.innerHTML = "";
+  els.previewContent.appendChild(img);
+}
+
+function renderPdfPreview(key, objectUrl) {
+  setPreviewKey(key);
+  setPreviewMode("is-media");
+  releasePreviewObjectUrl();
+  state.previewObjectUrl = objectUrl;
+
+  const iframe = document.createElement("iframe");
+  iframe.className = "preview-pdf";
+  iframe.src = objectUrl;
+  iframe.title = key;
+  els.previewContent.innerHTML = "";
+  els.previewContent.appendChild(iframe);
+}
+
+function resetPreview() {
+  state.selectedKey = "";
+  els.previewTitle.textContent = "No file selected";
+  els.previewDownloadButton.disabled = true;
+  setPreviewMode("is-text");
+  releasePreviewObjectUrl();
+  els.previewContent.textContent = "Select a text file from the S3 browser.";
+  renderSelectedRow();
+}
+
+function setPreviewKey(key) {
+  state.selectedKey = key;
+  els.previewTitle.textContent = key;
+  els.previewDownloadButton.disabled = false;
   switchWorkspace("preview");
   renderSelectedRow();
+}
+
+function setPreviewMode(modeClass) {
+  els.previewContent.classList.remove("is-text", "is-markdown", "is-media");
+  els.previewContent.classList.add(modeClass);
+}
+
+function releasePreviewObjectUrl() {
+  if (!state.previewObjectUrl) return;
+  URL.revokeObjectURL(state.previewObjectUrl);
+  state.previewObjectUrl = "";
 }
 
 function switchWorkspace(view) {
@@ -726,6 +855,118 @@ function formatDate(value) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(value));
+}
+
+function isMarkdownFile(key, contentType = "") {
+  const lowerKey = String(key || "").toLowerCase();
+  const lowerType = String(contentType || "").toLowerCase();
+  return lowerKey.endsWith(".md") || lowerType.includes("markdown");
+}
+
+function isImageFile(key) {
+  return /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(String(key || ""));
+}
+
+function isPdfFile(key) {
+  return /\.pdf$/i.test(String(key || ""));
+}
+
+function markdownToHtml(markdown) {
+  const lines = String(markdown || "").replace(/\r\n/g, "\n").split("\n");
+  const blocks = [];
+  let inCodeBlock = false;
+  let codeLines = [];
+  let listType = "";
+
+  const closeList = () => {
+    if (!listType) return;
+    blocks.push(listType === "ol" ? "</ol>" : "</ul>");
+    listType = "";
+  };
+
+  const flushCodeBlock = () => {
+    blocks.push(`<pre><code>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
+    codeLines = [];
+  };
+
+  for (const line of lines) {
+    if (line.trimStart().startsWith("```")) {
+      if (inCodeBlock) {
+        flushCodeBlock();
+        inCodeBlock = false;
+      } else {
+        closeList();
+        inCodeBlock = true;
+      }
+      continue;
+    }
+
+    if (inCodeBlock) {
+      codeLines.push(line);
+      continue;
+    }
+
+    if (!line.trim()) {
+      closeList();
+      continue;
+    }
+
+    const heading = line.match(/^(#{1,4})\s+(.*)$/);
+    if (heading) {
+      closeList();
+      const level = heading[1].length;
+      blocks.push(`<h${level}>${inlineMarkdown(heading[2])}</h${level}>`);
+      continue;
+    }
+
+    const ordered = line.match(/^\d+\.\s+(.*)$/);
+    if (ordered) {
+      if (listType !== "ol") {
+        closeList();
+        blocks.push("<ol>");
+        listType = "ol";
+      }
+      blocks.push(`<li>${inlineMarkdown(ordered[1])}</li>`);
+      continue;
+    }
+
+    const unordered = line.match(/^[-*+]\s+(.*)$/);
+    if (unordered) {
+      if (listType !== "ul") {
+        closeList();
+        blocks.push("<ul>");
+        listType = "ul";
+      }
+      blocks.push(`<li>${inlineMarkdown(unordered[1])}</li>`);
+      continue;
+    }
+
+    const quote = line.match(/^>\s?(.*)$/);
+    if (quote) {
+      closeList();
+      blocks.push(`<blockquote>${inlineMarkdown(quote[1])}</blockquote>`);
+      continue;
+    }
+
+    closeList();
+    blocks.push(`<p>${inlineMarkdown(line)}</p>`);
+  }
+
+  if (inCodeBlock) {
+    flushCodeBlock();
+  }
+  closeList();
+
+  return blocks.join("");
+}
+
+function inlineMarkdown(value) {
+  let html = escapeHtml(value);
+  html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+  html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
+  html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  html = html.replace(/\*([^*]+)\*/g, "<em>$1</em>");
+  return html;
 }
 
 function escapeHtml(value) {

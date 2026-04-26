@@ -554,12 +554,79 @@ td.actions {
   padding: 14px;
   overflow: auto;
   flex: 1;
+  background: #10181d;
+  color: #edf4f7;
+}
+
+.preview-content.is-text {
   font-size: 12px;
   line-height: 1.55;
   white-space: pre-wrap;
-  background: #10181d;
-  color: #edf4f7;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.preview-content.is-markdown {
+  background: #ffffff;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.preview-content.is-markdown h1,
+.preview-content.is-markdown h2,
+.preview-content.is-markdown h3,
+.preview-content.is-markdown h4 {
+  margin: 0 0 10px;
+  line-height: 1.35;
+}
+
+.preview-content.is-markdown p,
+.preview-content.is-markdown ul,
+.preview-content.is-markdown ol,
+.preview-content.is-markdown pre,
+.preview-content.is-markdown blockquote {
+  margin: 0 0 12px;
+}
+
+.preview-content.is-markdown ul,
+.preview-content.is-markdown ol {
+  padding-left: 20px;
+}
+
+.preview-content.is-markdown code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  background: #f3f6f8;
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+
+.preview-content.is-markdown pre code {
+  display: block;
+  padding: 10px;
+  border: 1px solid var(--line);
+  background: #f8fafb;
+  overflow: auto;
+}
+
+.preview-content.is-media {
+  background: #0e171c;
+  display: grid;
+  place-items: center;
+  padding: 8px;
+}
+
+.preview-image {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.preview-pdf {
+  width: 100%;
+  height: 100%;
+  min-height: 420px;
+  border: 0;
+  background: #fff;
 }
 
 .file-link {
