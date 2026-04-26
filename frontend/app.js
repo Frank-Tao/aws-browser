@@ -20,6 +20,7 @@ const els = {
   connectionStatus: document.getElementById("connectionStatus"),
   settingsIcon: document.getElementById("settingsIcon"),
   refreshButton: document.getElementById("refreshButton"),
+  downloadPrefixButton: document.getElementById("downloadPrefixButton"),
   chooseFolderButton: document.getElementById("chooseFolderButton"),
   folderInput: document.getElementById("folderInput"),
   selectAllFiles: document.getElementById("selectAllFiles"),
@@ -47,12 +48,13 @@ const els = {
   previewDownloadButton: document.getElementById("previewDownloadButton"),
 };
 
-els.chooseFolderButton.addEventListener("click", () => els.folderInput.click());
+els.chooseFolderButton.addEventListener("click", chooseFolder);
 els.folderInput.addEventListener("change", handleFolderSelection);
 els.startUploadButton.addEventListener("click", startUpload);
 els.clearSelectionButton.addEventListener("click", clearSelection);
 els.selectAllFiles.addEventListener("change", toggleSelectAllFiles);
 els.refreshButton.addEventListener("click", refreshTree);
+els.downloadPrefixButton.addEventListener("click", downloadCurrentPrefix);
 els.upButton.addEventListener("click", goUp);
 els.previewTabButton.addEventListener("click", () => switchWorkspace("preview"));
 els.uploadTabButton.addEventListener("click", () => switchWorkspace("upload"));
@@ -61,6 +63,7 @@ els.previewDownloadButton.addEventListener("click", () => {
 });
 els.settingsIcon.innerHTML = iconSvg("settings");
 els.refreshButton.innerHTML = iconSvg("refresh");
+els.downloadPrefixButton.innerHTML = iconSvg("download");
 els.upButton.innerHTML = iconSvg("arrowUp");
 
 boot();
@@ -86,15 +89,7 @@ async function checkHealth() {
 }
 
 function handleFolderSelection(event) {
-  state.files = Array.from(event.target.files || []);
-  state.fileStatuses.clear();
-  state.selectedPaths = new Set();
-  for (const file of state.files) {
-    const path = relativePathFor(file);
-    state.fileStatuses.set(path, "Waiting");
-    state.selectedPaths.add(path);
-  }
-  renderLocalFiles();
+  applySelectedFiles(Array.from(event.target.files || []));
 }
 
 function clearSelection() {
@@ -103,6 +98,40 @@ function clearSelection() {
   state.selectedPaths.clear();
   els.folderInput.value = "";
   setProgress(0, "No upload running");
+  renderLocalFiles();
+}
+
+async function chooseFolder() {
+  if (typeof window.showDirectoryPicker === "function") {
+    try {
+      const rootHandle = await window.showDirectoryPicker();
+      const pickedFiles = await collectFilesFromHandle(rootHandle, "");
+      applySelectedFiles(pickedFiles);
+      return;
+    } catch (error) {
+      if (error && error.name === "AbortError") return;
+      setProgress(0, `Folder picker failed: ${error.message || "Unknown error"}`);
+      return;
+    }
+  }
+
+  // Fallback for browsers without File System Access API.
+  els.folderInput.value = "";
+  els.folderInput.click();
+}
+
+function applySelectedFiles(files) {
+  state.files = files;
+  state.fileStatuses.clear();
+  state.selectedPaths = new Set();
+  for (const file of state.files) {
+    const path = relativePathFor(file);
+    state.fileStatuses.set(path, "Waiting");
+    state.selectedPaths.add(path);
+  }
+  if (!state.files.length) {
+    setProgress(0, "No files found in selected folder");
+  }
   renderLocalFiles();
 }
 
@@ -153,7 +182,7 @@ async function startUpload() {
       try {
         if (els.uploadAsJson.checked) {
           const contentBase64 = await readFileAsBase64(file);
-          await requestJson("/api/upload-file-json", {
+          await requestJson("/api/post-raw-json", {
             method: "POST",
             headers: jsonHeaders(),
             body: JSON.stringify({
@@ -367,6 +396,36 @@ async function downloadObject(key) {
   link.click();
   link.remove();
   URL.revokeObjectURL(objectUrl);
+}
+
+async function downloadCurrentPrefix() {
+  const prefix = state.currentPrefix || "";
+  try {
+    const response = await fetch(apiUrl(`/api/download-prefix?prefix=${encodeURIComponent(prefix)}`), {
+      headers: authHeaders(),
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null);
+      throw new Error(payload?.detail || response.statusText || "Download failed");
+    }
+
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = objectUrl;
+
+    const contentDisposition = response.headers.get("content-disposition") || "";
+    const matched = contentDisposition.match(/filename="([^"]+)"/i);
+    link.download = matched?.[1] || (prefix ? `${prefix.split("/").pop() || "prefix"}.zip` : "bucket-root.zip");
+
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(objectUrl);
+  } catch (error) {
+    setProgress(0, `Prefix download failed: ${error.message}`);
+    window.alert(`Prefix download failed: ${error.message}`);
+  }
 }
 
 async function deleteObject(key) {
@@ -584,7 +643,7 @@ async function runLimited(items, limit, worker) {
 }
 
 function relativePathFor(file) {
-  return file.webkitRelativePath || file.name;
+  return file.__relativePath || file.webkitRelativePath || file.name;
 }
 
 function stripBasePrefix(key) {
@@ -704,4 +763,25 @@ function iconSvg(name) {
       '<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z"/><path d="M19.4 15a1.8 1.8 0 0 0 .4 2l.1.1-2 3.4-.2-.1a1.8 1.8 0 0 0-2 .4l-.2.2a1.8 1.8 0 0 0-.5 1.3V22h-4v-.3a1.8 1.8 0 0 0-.5-1.3l-.2-.2a1.8 1.8 0 0 0-2-.4l-.2.1-2-3.4.1-.1a1.8 1.8 0 0 0 .4-2 1.8 1.8 0 0 0-1.6-1.1H4v-4h.3A1.8 1.8 0 0 0 6 8a1.8 1.8 0 0 0-.4-2l-.1-.1 2-3.4.2.1a1.8 1.8 0 0 0 2-.4l.2-.2A1.8 1.8 0 0 0 10.4.7V.5h4v.2a1.8 1.8 0 0 0 .5 1.3l.2.2a1.8 1.8 0 0 0 2 .4l.2-.1 2 3.4-.1.1a1.8 1.8 0 0 0-.4 2 1.8 1.8 0 0 0 1.6 1.1h.3v4h-.3a1.8 1.8 0 0 0-1.6 1.1z"/></svg>',
   };
   return icons[name] || "";
+}
+
+async function collectFilesFromHandle(directoryHandle, prefix) {
+  const files = [];
+  for await (const entry of directoryHandle.values()) {
+    const nextPrefix = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (entry.kind === "directory") {
+      const nested = await collectFilesFromHandle(entry, nextPrefix);
+      files.push(...nested);
+      continue;
+    }
+    const file = await entry.getFile();
+    Object.defineProperty(file, "__relativePath", {
+      value: nextPrefix,
+      enumerable: false,
+      configurable: true,
+    });
+    files.push(file);
+  }
+  files.sort((a, b) => relativePathFor(a).localeCompare(relativePathFor(b)));
+  return files;
 }

@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     )
     aws_profile: str = Field("", alias="AWS_PROFILE")
     s3_base_prefix: str = Field("", alias="S3_BASE_PREFIX")
-    max_file_bytes: int = Field(100 * 1024 * 1024, alias="MAX_FILE_BYTES")
+    max_file_bytes: int = Field(5 * 1024 * 1024, alias="MAX_FILE_BYTES")
     max_manifest_files: int = Field(5000, alias="MAX_MANIFEST_FILES")
     allowed_origins: str = Field("", alias="ALLOWED_ORIGINS")
     upload_session_store: str = Field("auto", alias="UPLOAD_SESSION_STORE")

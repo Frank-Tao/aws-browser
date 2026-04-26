@@ -26,6 +26,12 @@
           <div class="panel-actions">
             <button id="upButton" class="icon-button secondary" title="Parent prefix" type="button" disabled></button>
             <button id="refreshButton" class="icon-button secondary" title="Refresh bucket view" type="button"></button>
+            <button
+              id="downloadPrefixButton"
+              class="icon-button secondary"
+              title="Download current prefix"
+              type="button"
+            ></button>
           </div>
         </div>
 
@@ -72,7 +78,7 @@
           <div class="panel-header compact-header">
             <h2 id="uploadTitle">Local Folder</h2>
             <button id="chooseFolderButton" type="button">Choose Folder</button>
-            <input id="folderInput" type="file" webkitdirectory multiple hidden />
+            <input id="folderInput" type="file" webkitdirectory directory mozdirectory multiple hidden />
           </div>
 
           <div class="summary-grid">

@@ -1,4 +1,6 @@
 import importlib
+import io
+import zipfile
 
 
 def load_test_client(monkeypatch):
@@ -150,7 +152,7 @@ def test_upload_file_json_restores_file_content(monkeypatch):
         session_id = manifest_response.json()["session_id"]
 
         upload_response = client.post(
-            "/api/upload-file-json",
+            "/api/post-raw-json",
             json={
                 "session_id": session_id,
                 "path": "folder/a.txt",
@@ -166,5 +168,48 @@ def test_upload_file_json_restores_file_content(monkeypatch):
         finish_response = client.post("/api/finish-upload", json={"session_id": session_id})
         assert finish_response.status_code == 200
         assert finish_response.json()["uploaded_count"] == 1
+    finally:
+        client.app.dependency_overrides = {}
+
+
+def test_download_prefix_returns_zip(monkeypatch):
+    client = load_test_client(monkeypatch)
+    monkeypatch.setenv("S3_BUCKET", "test-bucket")
+    monkeypatch.setenv("UPLOAD_SESSION_STORE", "memory")
+    import backend.app.config as config
+    import backend.app.main as main
+
+    config.get_settings.cache_clear()
+
+    file_data = {
+        "notes/a.txt": b"hello",
+        "notes/sub/b.md": b"# title\n",
+    }
+
+    class FakeS3:
+        def list_recursive_keys(self, prefix=""):
+            if prefix != "notes":
+                return []
+            return sorted(file_data.keys())
+
+        def archive_name_for_key(self, key, prefix=""):
+            return key[len(prefix.rstrip("/") + "/") :] if prefix else key
+
+        def get_object_stream(self, key):
+            content = file_data.get(key)
+            if content is None:
+                return None
+            return {"Body": io.BytesIO(content)}
+
+    client.app.dependency_overrides[main.get_s3] = lambda: FakeS3()
+    try:
+        response = client.get("/api/download-prefix", params={"prefix": "notes"})
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "application/zip"
+
+        archive = zipfile.ZipFile(io.BytesIO(response.content))
+        assert sorted(archive.namelist()) == ["a.txt", "sub/b.md"]
+        assert archive.read("a.txt") == b"hello"
+        assert archive.read("sub/b.md") == b"# title\n"
     finally:
         client.app.dependency_overrides = {}

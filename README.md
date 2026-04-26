@@ -61,7 +61,7 @@ Upload tab now has:
 
 Behavior:
 - Unchecked: old multipart endpoint `POST /api/upload-file`
-- Checked: frontend reads file content in JavaScript, base64-encodes it, and sends JSON to `POST /api/upload-file-json`
+- Checked: frontend reads file content in JavaScript, base64-encodes it, and sends JSON to `POST /api/post-raw-json`
 
 JSON mode is useful if multipart upload is blocked by network/proxy policy.
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import BinaryIO, Optional
 
 import boto3
@@ -55,9 +56,7 @@ class S3Service:
 
     def list_prefix(self, prefix: str = "") -> list[S3Entry]:
         self._require_bucket()
-        normalized_prefix = self.make_key(prefix) if prefix else self.settings.normalized_base_prefix
-        if normalized_prefix and not normalized_prefix.endswith("/"):
-            normalized_prefix += "/"
+        normalized_prefix = self._normalized_prefix(prefix)
 
         paginator = self.client.get_paginator("list_objects_v2")
         entries: list[S3Entry] = []
@@ -102,6 +101,39 @@ class S3Service:
 
         return sorted(entries, key=lambda entry: (entry.type != "folder", entry.name.lower()))
 
+    def list_recursive_keys(self, prefix: str = "") -> list[str]:
+        self._require_bucket()
+        normalized_prefix = self._normalized_prefix(prefix)
+        paginator = self.client.get_paginator("list_objects_v2")
+        keys: list[str] = []
+
+        try:
+            for page in paginator.paginate(
+                Bucket=self.settings.s3_bucket,
+                Prefix=normalized_prefix,
+            ):
+                for item in page.get("Contents", []):
+                    key = item["Key"]
+                    if key == normalized_prefix or self._is_control_key(key):
+                        continue
+                    keys.append(key)
+        except (NoCredentialsError, PartialCredentialsError) as exc:
+            raise missing_credentials_error() from exc
+        except ClientError as exc:
+            raise translate_client_error(exc) from exc
+
+        return sorted(keys)
+
+    def archive_name_for_key(self, key: str, prefix: str = "") -> str:
+        normalized_prefix = self._normalized_prefix(prefix)
+        if normalized_prefix and key.startswith(normalized_prefix):
+            return key[len(normalized_prefix) :]
+
+        base_prefix = self.settings.normalized_base_prefix
+        if base_prefix and key.startswith(base_prefix):
+            return key[len(base_prefix) :]
+        return Path(key).name
+
     def upload_fileobj(self, fileobj: BinaryIO, key: str, content_type: Optional[str] = None) -> None:
         self._require_bucket()
         extra_args = {}
@@ -142,6 +174,12 @@ class S3Service:
     def _require_bucket(self) -> None:
         if not self.settings.s3_bucket:
             raise HTTPException(status_code=500, detail="S3_BUCKET is not configured")
+
+    def _normalized_prefix(self, prefix: str = "") -> str:
+        normalized_prefix = self.make_key(prefix) if prefix else self.settings.normalized_base_prefix
+        if normalized_prefix and not normalized_prefix.endswith("/"):
+            normalized_prefix += "/"
+        return normalized_prefix
 
     def _is_control_key(self, key: str) -> bool:
         session_prefix = self.settings.session_manifest_prefix.strip("/")

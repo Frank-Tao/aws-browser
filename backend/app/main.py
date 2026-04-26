@@ -3,11 +3,15 @@ from __future__ import annotations
 import base64
 import binascii
 import io
+import os
+import tempfile
+import zipfile
 from pathlib import Path
 from typing import Annotated, Optional
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.background import BackgroundTask
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -186,7 +190,7 @@ def upload_file(
     return {"path": safe_path, "key": key, "uploaded": True}
 
 
-@app.post("/api/upload-file-json")
+@app.post("/api/post-raw-json")
 def upload_file_json(
     payload: JsonUploadRequest,
     s3: Annotated[S3Service, Depends(get_s3)],
@@ -251,6 +255,52 @@ def download_object(
     )
 
 
+@app.get("/api/download-prefix")
+def download_prefix(
+    s3: Annotated[S3Service, Depends(get_s3)],
+    _: Annotated[None, Depends(verify_api_token)],
+    prefix: str = "",
+):
+    safe_prefix = clean_relative_path(prefix, allow_empty=True)
+    keys = s3.list_recursive_keys(safe_prefix)
+    if not keys:
+        raise HTTPException(status_code=404, detail="No files found in this prefix")
+
+    with tempfile.NamedTemporaryFile(prefix="aws-browser-", suffix=".zip", delete=False) as temp_file:
+        zip_path = temp_file.name
+
+    try:
+        with zipfile.ZipFile(zip_path, mode="w", compression=zipfile.ZIP_DEFLATED) as zip_file:
+            for key in keys:
+                archive_name = s3.archive_name_for_key(key, safe_prefix)
+                if not archive_name:
+                    continue
+                obj = s3.get_object_stream(key)
+                if obj is None:
+                    continue
+                body = obj["Body"]
+                try:
+                    with zip_file.open(archive_name, mode="w") as target:
+                        while True:
+                            chunk = body.read(1024 * 1024)
+                            if not chunk:
+                                break
+                            target.write(chunk)
+                finally:
+                    body.close()
+
+        file_name = "bucket-root.zip" if not safe_prefix else f"{Path(safe_prefix).name}.zip"
+        return FileResponse(
+            zip_path,
+            media_type="application/zip",
+            filename=file_name,
+            background=BackgroundTask(remove_temp_file, zip_path),
+        )
+    except Exception:
+        remove_temp_file(zip_path)
+        raise
+
+
 @app.get("/api/read-text")
 def read_text_object(
     s3: Annotated[S3Service, Depends(get_s3)],
@@ -295,6 +345,13 @@ def stream_s3_body(body):
             yield chunk
     finally:
         body.close()
+
+
+def remove_temp_file(path: str):
+    try:
+        os.unlink(path)
+    except FileNotFoundError:
+        return
 
 
 if FRONTEND_DIR.exists():
