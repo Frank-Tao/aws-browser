@@ -11,6 +11,9 @@ on:
       - ".github/workflows/deploy-backend.yml"
   workflow_dispatch:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 permissions:
   id-token: write
   contents: read
@@ -21,6 +24,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Validate AWS deploy secrets
+        env:
+          AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          AWS_BROWSER_S3_BUCKET: ${{ secrets.AWS_BROWSER_S3_BUCKET }}
+        run: |
+          test -n "$AWS_ROLE_TO_ASSUME" || (echo "Missing GitHub secret: AWS_ROLE_TO_ASSUME" && exit 1)
+          test -n "$AWS_BROWSER_S3_BUCKET" || (echo "Missing GitHub secret: AWS_BROWSER_S3_BUCKET" && exit 1)
 
       - name: Set up Python
         uses: actions/setup-python@v5
