@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>aws-browser</title>
+    <link rel="stylesheet" href="/assets/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h1>aws-browser</h1>
+        <p id="connectionStatus">Checking backend</p>
+      </div>
+      <div class="top-actions">
+        <button id="settingsButton" class="icon-button" title="Settings" type="button">
+          <span id="settingsIcon" aria-hidden="true"></span>
+        </button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="panel browser-panel" aria-labelledby="browserTitle">
+        <div class="panel-header">
+          <h2 id="browserTitle">S3 Bucket</h2>
+          <div class="panel-actions">
+            <button id="upButton" class="icon-button secondary" title="Parent prefix" type="button" disabled></button>
+            <button id="refreshButton" class="icon-button secondary" title="Refresh bucket view" type="button"></button>
+          </div>
+        </div>
+
+        <div class="prefix-bar">
+          <span class="prefix-label">Current Prefix</span>
+          <span id="breadcrumb" class="breadcrumb">/</span>
+        </div>
+
+        <div class="file-list-shell s3-list">
+          <div class="s3-grid">
+            <div class="s3-row s3-header">
+              <div class="s3-cell">Name</div>
+              <div class="s3-cell">Size</div>
+              <div class="s3-cell">Modified</div>
+              <div class="s3-cell">Actions</div>
+            </div>
+            <div id="s3FileList" class="s3-grid-body">
+              <div class="s3-empty">No bucket data loaded</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div id="splitResizer" class="split-resizer" role="separator" aria-orientation="vertical" aria-label="Resize panels"></div>
+
+      <section class="panel work-panel" aria-labelledby="workTitle">
+        <div class="panel-header">
+          <h2 id="workTitle">Workspace</h2>
+          <div class="tab-bar" role="tablist" aria-label="Workspace views">
+            <button id="previewTabButton" class="tab-button active" type="button">Preview</button>
+            <button id="uploadTabButton" class="tab-button" type="button">Upload</button>
+          </div>
+        </div>
+
+        <section id="previewSection" class="workspace-section active" aria-labelledby="previewTabButton">
+          <div class="preview-header">
+            <strong id="previewTitle">No file selected</strong>
+            <button id="previewDownloadButton" class="secondary" type="button" disabled>Download</button>
+          </div>
+          <pre id="previewContent" class="preview-content">Select a text file from the S3 browser.</pre>
+        </section>
+
+        <section id="uploadSection" class="workspace-section" aria-labelledby="uploadTabButton">
+          <div class="panel-header compact-header">
+            <h2 id="uploadTitle">Local Folder</h2>
+            <button id="chooseFolderButton" type="button">Choose Folder</button>
+            <input id="folderInput" type="file" webkitdirectory multiple hidden />
+          </div>
+
+          <div class="field-row">
+            <label for="destinationPrefix">S3 prefix</label>
+            <input id="destinationPrefix" type="text" placeholder="uploads" autocomplete="off" />
+          </div>
+
+          <label class="check-row">
+            <input id="ignoreObsidian" type="checkbox" checked />
+            <span>Ignore .obsidian</span>
+          </label>
+
+          <div class="summary-grid">
+            <div>
+              <span class="metric" id="selectedCount">0</span>
+              <span class="metric-label">Files</span>
+            </div>
+            <div>
+              <span class="metric" id="selectedSize">0 B</span>
+              <span class="metric-label">Size</span>
+            </div>
+          </div>
+
+          <div class="upload-actions">
+            <button id="startUploadButton" type="button" disabled>Upload</button>
+            <button id="clearSelectionButton" class="secondary" type="button" disabled>Clear</button>
+          </div>
+
+          <div class="progress-block" aria-live="polite">
+            <div class="progress-meta">
+              <span id="progressText">No upload running</span>
+              <span id="progressPercent">0%</span>
+            </div>
+            <div class="progress-track">
+              <div id="progressBar" class="progress-bar"></div>
+            </div>
+          </div>
+
+          <div class="file-list-shell upload-file-list">
+            <table>
+              <thead>
+                <tr>
+                  <th>Path</th>
+                  <th>Size</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="localFileList">
+                <tr>
+                  <td colspan="3" class="empty">No local folder selected</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <script src="/config.js"></script>
+    <script src="/assets/app.js"></script>
+  </body>
+</html>

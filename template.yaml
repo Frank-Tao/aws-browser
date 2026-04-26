@@ -1,0 +1,124 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: aws-browser backend API Gateway, Lambda, S3 session manifests, and S3 file access.
+
+Parameters:
+  S3Bucket:
+    Type: String
+    Description: Existing S3 bucket to browse and write.
+  AwsRegionName:
+    Type: String
+    Default: ap-southeast-2
+  S3BasePrefix:
+    Type: String
+    Default: ""
+  AllowedOrigins:
+    Type: String
+    Default: "*"
+  AppApiToken:
+    Type: String
+    Default: ""
+    NoEcho: true
+  MaxFileBytes:
+    Type: Number
+    Default: 6000000
+  MaxManifestFiles:
+    Type: Number
+    Default: 1000
+  SessionManifestPrefix:
+    Type: String
+    Default: .aws-browser/sessions
+  MaxLambdaConcurrency:
+    Type: Number
+    Default: 5
+    MinValue: 1
+    MaxValue: 10
+    Description: Hard cap for concurrent Lambda executions. AWS implements this with ReservedConcurrentExecutions.
+  ApiThrottleBurstLimit:
+    Type: Number
+    Default: 5
+    MinValue: 1
+    Description: Maximum short request burst API Gateway should allow.
+  ApiThrottleRateLimit:
+    Type: Number
+    Default: 5
+    MinValue: 1
+    Description: Steady-state requests per second API Gateway should allow.
+
+Globals:
+  Function:
+    Runtime: python3.11
+    Timeout: 60
+    MemorySize: 1024
+    Architectures:
+      - arm64
+    Environment:
+      Variables:
+        S3_BUCKET: !Ref S3Bucket
+        APP_AWS_REGION: !Ref AwsRegionName
+        S3_BASE_PREFIX: !Ref S3BasePrefix
+        MAX_FILE_BYTES: !Ref MaxFileBytes
+        MAX_MANIFEST_FILES: !Ref MaxManifestFiles
+        ALLOWED_ORIGINS: !Ref AllowedOrigins
+        APP_API_TOKEN: !Ref AppApiToken
+        UPLOAD_SESSION_STORE: s3
+        SESSION_MANIFEST_PREFIX: !Ref SessionManifestPrefix
+
+Resources:
+  AwsBrowserApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: !Ref ApiThrottleBurstLimit
+        ThrottlingRateLimit: !Ref ApiThrottleRateLimit
+      CorsConfiguration:
+        AllowOrigins:
+          - !Ref AllowedOrigins
+        AllowMethods:
+          - GET
+          - POST
+          - OPTIONS
+        AllowHeaders:
+          - authorization
+          - content-type
+
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: backend/
+      Handler: lambda_handler.handler
+      ReservedConcurrentExecutions: !Ref MaxLambdaConcurrency
+      Policies:
+        - Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Action:
+                - s3:ListBucket
+              Resource: !Sub arn:aws:s3:::${S3Bucket}
+            - Effect: Allow
+              Action:
+                - s3:GetObject
+                - s3:PutObject
+                - s3:DeleteObject
+              Resource: !Sub arn:aws:s3:::${S3Bucket}/*
+      Events:
+        Root:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref AwsBrowserApi
+            Path: /
+            Method: ANY
+        Proxy:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref AwsBrowserApi
+            Path: /{proxy+}
+            Method: ANY
+
+Outputs:
+  ApiUrl:
+    Description: API Gateway endpoint URL.
+    Value: !Sub https://${AwsBrowserApi}.execute-api.${AWS::Region}.amazonaws.com
+  MaxLambdaConcurrency:
+    Description: Maximum concurrent Lambda executions.
+    Value: !Ref MaxLambdaConcurrency

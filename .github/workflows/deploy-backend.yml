@@ -1,0 +1,62 @@
+name: Deploy Backend
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "backend/**"
+      - "template.yaml"
+      - "samconfig.toml"
+      - ".github/workflows/deploy-backend.yml"
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up SAM CLI
+        uses: aws-actions/setup-sam@v2
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ vars.AWS_REGION || 'ap-southeast-2' }}
+
+      - name: Build
+        run: sam build --use-container
+
+      - name: Deploy
+        run: |
+          sam deploy \
+            --stack-name "${{ vars.BACKEND_STACK_NAME || 'aws-browser-api' }}" \
+            --region "${{ vars.AWS_REGION || 'ap-southeast-2' }}" \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --resolve-s3 \
+            --capabilities CAPABILITY_IAM \
+            --parameter-overrides \
+              S3Bucket="${{ secrets.AWS_BROWSER_S3_BUCKET }}" \
+              AwsRegionName="${{ vars.AWS_REGION || 'ap-southeast-2' }}" \
+              S3BasePrefix="${{ vars.S3_BASE_PREFIX }}" \
+              AllowedOrigins="${{ vars.FRONTEND_ORIGIN || '*' }}" \
+              AppApiToken="${{ secrets.AWS_BROWSER_API_TOKEN }}" \
+              MaxFileBytes="${{ vars.MAX_FILE_BYTES || '6000000' }}" \
+              MaxManifestFiles="${{ vars.MAX_MANIFEST_FILES || '1000' }}" \
+              SessionManifestPrefix="${{ vars.SESSION_MANIFEST_PREFIX || '.aws-browser/sessions' }}" \
+              MaxLambdaConcurrency="${{ vars.MAX_LAMBDA_CONCURRENCY || '5' }}" \
+              ApiThrottleBurstLimit="${{ vars.API_THROTTLE_BURST_LIMIT || '5' }}" \
+              ApiThrottleRateLimit="${{ vars.API_THROTTLE_RATE_LIMIT || '5' }}"
