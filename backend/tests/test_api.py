@@ -111,3 +111,60 @@ def test_list_reports_missing_aws_credentials(monkeypatch):
 
     assert response.status_code == 401
     assert "AWS credentials not found" in response.json()["detail"]
+
+
+def test_upload_file_json_restores_file_content(monkeypatch):
+    client = load_test_client(monkeypatch)
+    monkeypatch.setenv("S3_BUCKET", "test-bucket")
+    monkeypatch.setenv("UPLOAD_SESSION_STORE", "memory")
+    import backend.app.config as config
+    import backend.app.main as main
+
+    config.get_settings.cache_clear()
+
+    captured = {}
+
+    class FakeS3:
+        def make_key(self, relative_path, destination_prefix=""):
+            pieces = [destination_prefix.strip("/"), relative_path.strip("/")]
+            return "/".join(piece for piece in pieces if piece)
+
+        def upload_fileobj(self, fileobj, key, content_type=None):
+            captured["content"] = fileobj.read()
+            captured["key"] = key
+            captured["content_type"] = content_type
+
+    client.app.dependency_overrides[main.get_s3] = lambda: FakeS3()
+    try:
+        manifest_response = client.post(
+            "/api/upload-manifest",
+            json={
+                "destination_prefix": "notes",
+                "ignore_obsidian": False,
+                "files": [
+                    {"path": "folder/a.txt", "size": 11, "content_type": "text/plain"},
+                ],
+            },
+        )
+        assert manifest_response.status_code == 200
+        session_id = manifest_response.json()["session_id"]
+
+        upload_response = client.post(
+            "/api/upload-file-json",
+            json={
+                "session_id": session_id,
+                "path": "folder/a.txt",
+                "content_base64": "aGVsbG8gd29ybGQ=",
+                "content_type": "text/plain",
+            },
+        )
+        assert upload_response.status_code == 200
+        assert captured["content"] == b"hello world"
+        assert captured["key"] == "notes/folder/a.txt"
+        assert captured["content_type"] == "text/plain"
+
+        finish_response = client.post("/api/finish-upload", json={"session_id": session_id})
+        assert finish_response.status_code == 200
+        assert finish_response.json()["uploaded_count"] == 1
+    finally:
+        client.app.dependency_overrides = {}

@@ -5,6 +5,12 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",
-    "test": "npm run build && node scripts/test-static.mjs"
+    "test": "npm run build && node scripts/test-static.mjs",
+    "local": "cd .. && python -m uvicorn backend.app.main:app --reload --host 127.0.0.1 --port 8000",
+    "local:backenddir": "cd ../backend && python -m uvicorn local_main:app --reload --host 127.0.0.1 --port 8000",
+    "deploy:vercel": "vercel --prod"
+  },
+  "dependencies": {
+    "vercel": "^52.0.0"
   }
 }

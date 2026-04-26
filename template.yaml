@@ -30,9 +30,9 @@ Parameters:
     Default: .aws-browser/sessions
   MaxLambdaConcurrency:
     Type: Number
-    Default: 5
+    Default: 3
     MinValue: 1
-    MaxValue: 10
+    MaxValue: 5
     Description: Hard cap for concurrent Lambda executions. AWS implements this with ReservedConcurrentExecutions.
   ApiThrottleBurstLimit:
     Type: Number

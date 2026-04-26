@@ -57,6 +57,6 @@ jobs:
               MaxFileBytes="${{ vars.MAX_FILE_BYTES || '6000000' }}" \
               MaxManifestFiles="${{ vars.MAX_MANIFEST_FILES || '1000' }}" \
               SessionManifestPrefix="${{ vars.SESSION_MANIFEST_PREFIX || '.aws-browser/sessions' }}" \
-              MaxLambdaConcurrency="${{ vars.MAX_LAMBDA_CONCURRENCY || '5' }}" \
-              ApiThrottleBurstLimit="${{ vars.API_THROTTLE_BURST_LIMIT || '5' }}" \
-              ApiThrottleRateLimit="${{ vars.API_THROTTLE_RATE_LIMIT || '5' }}"
+              MaxLambdaConcurrency="${{ vars.MAX_LAMBDA_CONCURRENCY || '3' }}" \
+              ApiThrottleBurstLimit="${{ vars.API_THROTTLE_BURST_LIMIT || '3' }}" \
+              ApiThrottleRateLimit="${{ vars.API_THROTTLE_RATE_LIMIT || '3' }}"

@@ -5,3 +5,5 @@ backend/.env
 frontend/config.js
 frontend/dist/
 .DS_Store
+.aws-sam/
+node_modules/

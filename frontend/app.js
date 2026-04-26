@@ -1,6 +1,8 @@
 const state = {
   files: [],
   fileStatuses: new Map(),
+  selectedPaths: new Set(),
+  isUploading: false,
   currentPrefix: "",
   basePrefix: "",
   backendConfigured: false,
@@ -20,8 +22,8 @@ const els = {
   refreshButton: document.getElementById("refreshButton"),
   chooseFolderButton: document.getElementById("chooseFolderButton"),
   folderInput: document.getElementById("folderInput"),
-  destinationPrefix: document.getElementById("destinationPrefix"),
-  ignoreObsidian: document.getElementById("ignoreObsidian"),
+  selectAllFiles: document.getElementById("selectAllFiles"),
+  uploadAsJson: document.getElementById("uploadAsJson"),
   selectedCount: document.getElementById("selectedCount"),
   selectedSize: document.getElementById("selectedSize"),
   startUploadButton: document.getElementById("startUploadButton"),
@@ -49,6 +51,7 @@ els.chooseFolderButton.addEventListener("click", () => els.folderInput.click());
 els.folderInput.addEventListener("change", handleFolderSelection);
 els.startUploadButton.addEventListener("click", startUpload);
 els.clearSelectionButton.addEventListener("click", clearSelection);
+els.selectAllFiles.addEventListener("change", toggleSelectAllFiles);
 els.refreshButton.addEventListener("click", refreshTree);
 els.upButton.addEventListener("click", goUp);
 els.previewTabButton.addEventListener("click", () => switchWorkspace("preview"));
@@ -85,8 +88,11 @@ async function checkHealth() {
 function handleFolderSelection(event) {
   state.files = Array.from(event.target.files || []);
   state.fileStatuses.clear();
+  state.selectedPaths = new Set();
   for (const file of state.files) {
-    state.fileStatuses.set(relativePathFor(file), "Waiting");
+    const path = relativePathFor(file);
+    state.fileStatuses.set(path, "Waiting");
+    state.selectedPaths.add(path);
   }
   renderLocalFiles();
 }
@@ -94,13 +100,18 @@ function handleFolderSelection(event) {
 function clearSelection() {
   state.files = [];
   state.fileStatuses.clear();
+  state.selectedPaths.clear();
   els.folderInput.value = "";
   setProgress(0, "No upload running");
   renderLocalFiles();
 }
 
 async function startUpload() {
-  if (!state.files.length) return;
+  const selectedFiles = selectedLocalFiles();
+  if (!selectedFiles.length) {
+    setProgress(0, "Select at least one file to upload");
+    return;
+  }
   if (!state.backendConfigured) {
     setProgress(0, "Configure S3_BUCKET and AWS credentials before uploading");
     return;
@@ -110,7 +121,7 @@ async function startUpload() {
   setProgress(0, "Creating manifest");
 
   try {
-    const manifestFiles = state.files.map((file) => ({
+    const manifestFiles = selectedFiles.map((file) => ({
       path: relativePathFor(file),
       size: file.size,
       content_type: file.type || "application/octet-stream",
@@ -120,8 +131,7 @@ async function startUpload() {
       method: "POST",
       headers: jsonHeaders(),
       body: JSON.stringify({
-        destination_prefix: els.destinationPrefix.value.trim(),
-        ignore_obsidian: els.ignoreObsidian.checked,
+        ignore_obsidian: false,
         files: manifestFiles,
       }),
     });
@@ -132,23 +142,37 @@ async function startUpload() {
 
     const accepted = new Set((manifest.accepted || []).map((item) => item.path));
     let uploaded = 0;
-    const uploadable = state.files.filter((file) => accepted.has(relativePathFor(file)));
+    const uploadable = selectedFiles.filter((file) => accepted.has(relativePathFor(file)));
 
     await runLimited(uploadable, 1, async (file) => {
       const path = relativePathFor(file);
       state.fileStatuses.set(path, "Uploading");
       renderLocalFiles();
 
-      const form = new FormData();
-      form.append("session_id", manifest.session_id);
-      form.append("path", path);
-      form.append("file", file, file.name);
-
       try {
-        await requestJson("/api/upload-file", {
-          method: "POST",
-          body: form,
-        });
+        if (els.uploadAsJson.checked) {
+          const contentBase64 = await readFileAsBase64(file);
+          await requestJson("/api/upload-file-json", {
+            method: "POST",
+            headers: jsonHeaders(),
+            body: JSON.stringify({
+              session_id: manifest.session_id,
+              path,
+              content_type: file.type || "application/octet-stream",
+              content_base64: contentBase64,
+            }),
+          });
+        } else {
+          const form = new FormData();
+          form.append("session_id", manifest.session_id);
+          form.append("path", path);
+          form.append("file", file, file.name);
+
+          await requestJson("/api/upload-file", {
+            method: "POST",
+            body: form,
+          });
+        }
         uploaded += 1;
         state.fileStatuses.set(path, "Uploaded");
         setProgress(
@@ -184,7 +208,7 @@ async function loadS3Prefix(prefix, options = {}) {
   els.breadcrumb.textContent = `/${state.currentPrefix}`;
   els.upButton.disabled = !state.currentPrefix;
   if (options.showLoading) {
-    els.s3FileList.innerHTML = rowHtml(4, "Loading");
+    els.s3FileList.innerHTML = s3EmptyHtml("Loading");
   }
 
   try {
@@ -197,7 +221,7 @@ async function loadS3Prefix(prefix, options = {}) {
     renderS3Tree();
   } catch (error) {
     state.loadingPrefixes.delete(state.currentPrefix);
-    els.s3FileList.innerHTML = rowHtml(4, error.message);
+    els.s3FileList.innerHTML = s3EmptyHtml(error.message);
   }
 }
 
@@ -440,13 +464,17 @@ function goUp() {
 }
 
 function renderLocalFiles() {
-  els.selectedCount.textContent = String(state.files.length);
-  els.selectedSize.textContent = formatBytes(state.files.reduce((total, file) => total + file.size, 0));
-  els.startUploadButton.disabled = !state.files.length;
+  const selectedFiles = selectedLocalFiles();
+  els.selectedCount.textContent = String(selectedFiles.length);
+  els.selectedSize.textContent = formatBytes(selectedFiles.reduce((total, file) => total + file.size, 0));
+  els.startUploadButton.disabled = !selectedFiles.length;
   els.clearSelectionButton.disabled = !state.files.length;
+  els.selectAllFiles.disabled = !state.files.length || state.isUploading;
 
   if (!state.files.length) {
-    els.localFileList.innerHTML = rowHtml(3, "No local folder selected");
+    els.localFileList.innerHTML = rowHtml(5, "No local folder selected");
+    els.selectAllFiles.checked = false;
+    els.selectAllFiles.indeterminate = false;
     return;
   }
 
@@ -454,22 +482,44 @@ function renderLocalFiles() {
     .slice(0, 500)
     .map((file) => {
       const path = relativePathFor(file);
-      const status = state.fileStatuses.get(path) || "Waiting";
+      const selected = state.selectedPaths.has(path);
+      const status = selected ? state.fileStatuses.get(path) || "Waiting" : "Excluded";
+      const modified = file.lastModified ? formatDate(file.lastModified) : "-";
+      const modifiedTitle = file.lastModified ? new Date(file.lastModified).toISOString() : "";
+      const disabled = state.isUploading ? "disabled" : "";
       return `
         <tr>
+          <td class="upload-check-cell">
+            <input type="checkbox" data-file-select="${escapeAttr(path)}" ${selected ? "checked" : ""} ${disabled} aria-label="Select ${escapeAttr(path)}" />
+          </td>
           <td class="path-cell" title="${escapeAttr(path)}">${escapeHtml(path)}</td>
-          <td>${formatBytes(file.size)}</td>
-          <td class="${statusClass(status)}">${escapeHtml(status)}</td>
+          <td class="upload-modified-col" title="${escapeAttr(modifiedTitle)}">${escapeHtml(modified)}</td>
+          <td class="upload-size-col">${formatBytes(file.size)}</td>
+          <td class="upload-status-col ${statusClass(status)}">${escapeHtml(status)}</td>
         </tr>
       `;
     })
     .join("");
+
+  els.localFileList.querySelectorAll("[data-file-select]").forEach((input) => {
+    input.addEventListener("change", () => toggleLocalFile(input.dataset.fileSelect, input.checked));
+  });
+
+  const selectedCount = state.selectedPaths.size;
+  els.selectAllFiles.checked = selectedCount > 0 && selectedCount === state.files.length;
+  els.selectAllFiles.indeterminate = selectedCount > 0 && selectedCount < state.files.length;
 }
 
 function setUploading(isUploading) {
-  els.startUploadButton.disabled = isUploading || !state.files.length;
+  state.isUploading = isUploading;
+  els.startUploadButton.disabled = isUploading || !selectedLocalFiles().length;
   els.chooseFolderButton.disabled = isUploading;
   els.clearSelectionButton.disabled = isUploading || !state.files.length;
+  els.selectAllFiles.disabled = isUploading || !state.files.length;
+  els.uploadAsJson.disabled = isUploading;
+  if (state.files.length) {
+    renderLocalFiles();
+  }
 }
 
 function setProgress(percent, text) {
@@ -543,8 +593,50 @@ function s3EmptyHtml(message) {
 function statusClass(status) {
   if (status === "Uploaded") return "status-ok";
   if (status.startsWith("Failed")) return "status-error";
+  if (status === "Excluded") return "status-waiting";
   if (status.startsWith("Skipped")) return "status-waiting";
   return "status-waiting";
+}
+
+function selectedLocalFiles() {
+  return state.files.filter((file) => state.selectedPaths.has(relativePathFor(file)));
+}
+
+function toggleSelectAllFiles(event) {
+  const checked = event.target.checked;
+  state.selectedPaths.clear();
+  if (checked) {
+    for (const file of state.files) {
+      state.selectedPaths.add(relativePathFor(file));
+    }
+  }
+  renderLocalFiles();
+}
+
+function toggleLocalFile(path, checked) {
+  if (checked) {
+    state.selectedPaths.add(path);
+  } else {
+    state.selectedPaths.delete(path);
+  }
+  renderLocalFiles();
+}
+
+function readFileAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || "");
+      const comma = result.indexOf(",");
+      if (comma < 0 || comma + 1 >= result.length) {
+        reject(new Error(`Failed to encode ${file.name} as base64`));
+        return;
+      }
+      resolve(result.slice(comma + 1));
+    };
+    reader.onerror = () => reject(new Error(`Failed to read ${file.name}`));
+    reader.readAsDataURL(file);
+  });
 }
 
 function formatBytes(bytes) {

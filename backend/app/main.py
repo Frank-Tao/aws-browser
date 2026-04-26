@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import base64
+import binascii
+import io
 from pathlib import Path
 from typing import Annotated, Optional
 
@@ -36,6 +39,13 @@ class UploadManifestRequest(BaseModel):
 
 class FinishUploadRequest(BaseModel):
     session_id: str
+
+
+class JsonUploadRequest(BaseModel):
+    session_id: str
+    path: str
+    content_base64: str = Field(min_length=1)
+    content_type: Optional[str] = None
 
 
 def get_s3(settings: Annotated[Settings, Depends(get_settings)]) -> S3Service:
@@ -171,6 +181,35 @@ def upload_file(
     content_type = file.content_type or manifest_file.content_type or "application/octet-stream"
     key = s3.make_key(safe_path, session.destination_prefix)
     s3.upload_fileobj(file.file, key, content_type)
+    session_store.save_uploaded(session, safe_path, key)
+
+    return {"path": safe_path, "key": key, "uploaded": True}
+
+
+@app.post("/api/upload-file-json")
+def upload_file_json(
+    payload: JsonUploadRequest,
+    s3: Annotated[S3Service, Depends(get_s3)],
+    session_store: Annotated[SessionStore, Depends(get_session_store)],
+    _: Annotated[None, Depends(verify_api_token)],
+):
+    safe_path = clean_relative_path(payload.path)
+    session = session_store.get(payload.session_id)
+    manifest_file = session.files.get(safe_path)
+    if not manifest_file:
+        raise HTTPException(status_code=400, detail="File is not part of this upload session")
+
+    try:
+        content = base64.b64decode(payload.content_base64, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="Invalid base64 file content") from exc
+
+    if len(content) != manifest_file.size:
+        raise HTTPException(status_code=400, detail="Uploaded file size does not match manifest")
+
+    content_type = payload.content_type or manifest_file.content_type or "application/octet-stream"
+    key = s3.make_key(safe_path, session.destination_prefix)
+    s3.upload_fileobj(io.BytesIO(content), key, content_type)
     session_store.save_uploaded(session, safe_path, key)
 
     return {"path": safe_path, "key": key, "uploaded": True}

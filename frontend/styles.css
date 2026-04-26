@@ -385,6 +385,33 @@ td.actions {
   overflow: visible;
 }
 
+.upload-file-list th.upload-check-cell,
+.upload-file-list td.upload-check-cell {
+  width: 44px;
+  min-width: 44px;
+  text-align: center;
+  padding-left: 6px;
+  padding-right: 6px;
+}
+
+.upload-file-list th.upload-size-col,
+.upload-file-list td.upload-size-col {
+  width: 92px;
+  min-width: 92px;
+}
+
+.upload-file-list th.upload-modified-col,
+.upload-file-list td.upload-modified-col {
+  width: 190px;
+  min-width: 190px;
+}
+
+.upload-file-list th.upload-status-col,
+.upload-file-list td.upload-status-col {
+  width: 120px;
+  min-width: 120px;
+}
+
 .path-cell {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 12px;

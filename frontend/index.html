@@ -75,16 +75,6 @@
             <input id="folderInput" type="file" webkitdirectory multiple hidden />
           </div>
 
-          <div class="field-row">
-            <label for="destinationPrefix">S3 prefix</label>
-            <input id="destinationPrefix" type="text" placeholder="uploads" autocomplete="off" />
-          </div>
-
-          <label class="check-row">
-            <input id="ignoreObsidian" type="checkbox" checked />
-            <span>Ignore .obsidian</span>
-          </label>
-
           <div class="summary-grid">
             <div>
               <span class="metric" id="selectedCount">0</span>
@@ -101,6 +91,11 @@
             <button id="clearSelectionButton" class="secondary" type="button" disabled>Clear</button>
           </div>
 
+          <label class="check-row">
+            <input id="uploadAsJson" type="checkbox" />
+            <span>Use JSON payload upload mode</span>
+          </label>
+
           <div class="progress-block" aria-live="polite">
             <div class="progress-meta">
               <span id="progressText">No upload running</span>
@@ -115,14 +110,18 @@
             <table>
               <thead>
                 <tr>
+                  <th class="upload-check-cell">
+                    <input id="selectAllFiles" type="checkbox" aria-label="Select all files for upload" />
+                  </th>
                   <th>Path</th>
-                  <th>Size</th>
-                  <th>Status</th>
+                  <th class="upload-modified-col">Modified</th>
+                  <th class="upload-size-col">Size</th>
+                  <th class="upload-status-col">Status</th>
                 </tr>
               </thead>
               <tbody id="localFileList">
                 <tr>
-                  <td colspan="3" class="empty">No local folder selected</td>
+                  <td colspan="5" class="empty">No local folder selected</td>
                 </tr>
               </tbody>
             </table>
