@@ -171,6 +171,23 @@ class S3Service:
         except ClientError as exc:
             raise translate_client_error(exc) from exc
 
+    def delete_objects(self, keys: list[str]) -> None:
+        self._require_bucket()
+        if not keys:
+            return
+
+        try:
+            for index in range(0, len(keys), 1000):
+                batch = keys[index : index + 1000]
+                self.client.delete_objects(
+                    Bucket=self.settings.s3_bucket,
+                    Delete={"Objects": [{"Key": key} for key in batch], "Quiet": True},
+                )
+        except (NoCredentialsError, PartialCredentialsError) as exc:
+            raise missing_credentials_error() from exc
+        except ClientError as exc:
+            raise translate_client_error(exc) from exc
+
     def _require_bucket(self) -> None:
         if not self.settings.s3_bucket:
             raise HTTPException(status_code=500, detail="S3_BUCKET is not configured")

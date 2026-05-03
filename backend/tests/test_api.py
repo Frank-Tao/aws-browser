@@ -172,6 +172,92 @@ def test_upload_file_json_restores_file_content(monkeypatch):
         client.app.dependency_overrides = {}
 
 
+def test_get_prefix_delete_preview_lists_files_under_folder(monkeypatch):
+    client = load_test_client(monkeypatch)
+    monkeypatch.setenv("S3_BUCKET", "test-bucket")
+    monkeypatch.setenv("UPLOAD_SESSION_STORE", "memory")
+    import backend.app.config as config
+    import backend.app.main as main
+
+    config.get_settings.cache_clear()
+
+    class FakeS3:
+        def list_recursive_keys(self, prefix=""):
+            assert prefix == "notes"
+            return ["notes/a.txt", "notes/sub/b.md"]
+
+    client.app.dependency_overrides[main.get_s3] = lambda: FakeS3()
+    try:
+        response = client.get("/api/prefix", params={"prefix": "notes"})
+        assert response.status_code == 200
+        assert response.json() == {
+            "prefix": "notes",
+            "count": 2,
+            "keys": ["notes/a.txt", "notes/sub/b.md"],
+        }
+    finally:
+        client.app.dependency_overrides = {}
+
+
+def test_delete_prefix_deletes_all_files_under_folder(monkeypatch):
+    client = load_test_client(monkeypatch)
+    monkeypatch.setenv("S3_BUCKET", "test-bucket")
+    monkeypatch.setenv("UPLOAD_SESSION_STORE", "memory")
+    import backend.app.config as config
+    import backend.app.main as main
+
+    config.get_settings.cache_clear()
+    deleted = []
+
+    class FakeS3:
+        def list_recursive_keys(self, prefix=""):
+            assert prefix == "notes"
+            return ["notes/a.txt", "notes/sub/b.md"]
+
+        def delete_objects(self, keys):
+            deleted.extend(keys)
+
+    client.app.dependency_overrides[main.get_s3] = lambda: FakeS3()
+    try:
+        response = client.delete("/api/prefix", params={"prefix": "notes"})
+        assert response.status_code == 200
+        assert response.json() == {
+            "prefix": "notes",
+            "deleted": True,
+            "deleted_count": 2,
+            "keys": ["notes/a.txt", "notes/sub/b.md"],
+        }
+        assert deleted == ["notes/a.txt", "notes/sub/b.md"]
+    finally:
+        client.app.dependency_overrides = {}
+
+
+def test_delete_prefix_requires_existing_files(monkeypatch):
+    client = load_test_client(monkeypatch)
+    monkeypatch.setenv("S3_BUCKET", "test-bucket")
+    monkeypatch.setenv("UPLOAD_SESSION_STORE", "memory")
+    import backend.app.config as config
+    import backend.app.main as main
+
+    config.get_settings.cache_clear()
+
+    class FakeS3:
+        def list_recursive_keys(self, prefix=""):
+            assert prefix == "empty"
+            return []
+
+        def delete_objects(self, keys):
+            raise AssertionError("delete_objects should not be called for empty prefixes")
+
+    client.app.dependency_overrides[main.get_s3] = lambda: FakeS3()
+    try:
+        response = client.delete("/api/prefix", params={"prefix": "empty"})
+        assert response.status_code == 404
+        assert response.json()["detail"] == "No files found in this prefix"
+    finally:
+        client.app.dependency_overrides = {}
+
+
 def test_download_prefix_returns_zip(monkeypatch):
     client = load_test_client(monkeypatch)
     monkeypatch.setenv("S3_BUCKET", "test-bucket")

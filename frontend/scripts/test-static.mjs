@@ -19,4 +19,18 @@ if (!config.includes("AWS_BROWSER_CONFIG")) {
   throw new Error("dist/config.js does not define AWS_BROWSER_CONFIG");
 }
 
+const app = await readFile(join(dist, "assets", "app.js"), "utf8");
+if (!app.includes("collectFilesFromHandle(rootHandle, rootHandle.name)")) {
+  throw new Error("folder picker must preserve the selected root folder in relative upload paths");
+}
+if (!app.includes("new WeakMap()") || !app.includes("fileRelativePaths.set(file,")) {
+  throw new Error("folder picker paths must be stored outside File objects so JSON upload keeps hierarchy");
+}
+if (!app.includes("data-delete-prefix") || !app.includes("deletePrefix(")) {
+  throw new Error("S3 folder rows must expose a delete-folder action");
+}
+if (!app.includes("/api/prefix?prefix=") || !app.includes("files will be deleted in batch")) {
+  throw new Error("folder delete must preview file count and confirm before batch deletion");
+}
+
 console.log("frontend static smoke test passed");

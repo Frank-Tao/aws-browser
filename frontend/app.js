@@ -13,6 +13,8 @@ const state = {
   loadingPrefixes: new Set(),
 };
 
+const fileRelativePaths = new WeakMap();
+
 const runtimeConfig = window.AWS_BROWSER_CONFIG || {};
 const apiBaseUrl = (runtimeConfig.apiBaseUrl || "").replace(/\/$/, "");
 const apiToken = runtimeConfig.apiToken || localStorage.getItem("AWS_BROWSER_API_TOKEN") || "";
@@ -106,7 +108,7 @@ async function chooseFolder() {
   if (typeof window.showDirectoryPicker === "function") {
     try {
       const rootHandle = await window.showDirectoryPicker();
-      const pickedFiles = await collectFilesFromHandle(rootHandle, "");
+      const pickedFiles = await collectFilesFromHandle(rootHandle, rootHandle.name);
       applySelectedFiles(pickedFiles);
       return;
     } catch (error) {
@@ -303,6 +305,9 @@ function renderS3Tree() {
   els.s3FileList.querySelectorAll("[data-delete]").forEach((button) => {
     button.addEventListener("click", () => deleteObject(button.dataset.delete));
   });
+  els.s3FileList.querySelectorAll("[data-delete-prefix]").forEach((button) => {
+    button.addEventListener("click", () => deletePrefix(button.dataset.deletePrefix));
+  });
 }
 
 function appendTreeRows(rows, prefix, depth) {
@@ -325,7 +330,11 @@ function appendTreeRows(rows, prefix, depth) {
             </div>
             <div class="s3-cell"></div>
           <div class="s3-cell">${loading ? "Loading" : ""}</div>
-            <div class="s3-cell actions"></div>
+            <div class="s3-cell actions">
+            <button class="icon-action danger" type="button" data-delete-prefix="${escapeAttr(nextPrefix)}" aria-label="Delete folder ${escapeAttr(entry.name)}" title="Delete folder">
+              ${iconSvg("trash")}
+            </button>
+          </div>
           </div>
       `);
       if (expanded) {
@@ -499,6 +508,49 @@ async function deleteObject(key) {
   }
 
   if (state.selectedKey === key) {
+    resetPreview();
+  }
+
+  state.tree.clear();
+  state.expandedPrefixes = new Set([""]);
+  await loadS3Prefix("", { showLoading: true });
+}
+
+async function deletePrefix(prefix) {
+  let preview;
+  try {
+    preview = await requestJson(`/api/prefix?prefix=${encodeURIComponent(prefix)}`);
+  } catch (error) {
+    setProgress(0, `Folder delete preview failed: ${error.message}`);
+    window.alert(`Folder delete preview failed: ${error.message}`);
+    return;
+  }
+
+  const count = preview.count || 0;
+  if (!count) {
+    window.alert(`No files found under ${prefix}.`);
+    return;
+  }
+
+  const sample = (preview.keys || []).slice(0, 20).join("\n");
+  const extra = count > 20 ? `\n...and ${count - 20} more` : "";
+  const ok = window.confirm(
+    `Delete folder ${prefix}?\n\n${count} files will be deleted in batch.\n\n${sample}${extra}\n\nThis cannot be undone.`,
+  );
+  if (!ok) return;
+
+  try {
+    const deleted = await requestJson(`/api/prefix?prefix=${encodeURIComponent(prefix)}`, {
+      method: "DELETE",
+    });
+    setProgress(100, `Deleted ${deleted.deleted_count || count} files from ${prefix}`);
+  } catch (error) {
+    setProgress(0, `Folder delete failed: ${error.message}`);
+    window.alert(`Folder delete failed: ${error.message}`);
+    return;
+  }
+
+  if (state.selectedKey && state.selectedKey.startsWith(`${prefix.replace(/\/$/, "")}/`)) {
     resetPreview();
   }
 
@@ -772,7 +824,7 @@ async function runLimited(items, limit, worker) {
 }
 
 function relativePathFor(file) {
-  return file.__relativePath || file.webkitRelativePath || file.name;
+  return fileRelativePaths.get(file) || file.__relativePath || file.webkitRelativePath || file.name;
 }
 
 function stripBasePrefix(key) {
@@ -1016,13 +1068,23 @@ async function collectFilesFromHandle(directoryHandle, prefix) {
       continue;
     }
     const file = await entry.getFile();
-    Object.defineProperty(file, "__relativePath", {
-      value: nextPrefix,
-      enumerable: false,
-      configurable: true,
-    });
+    rememberRelativePath(file, nextPrefix);
     files.push(file);
   }
   files.sort((a, b) => relativePathFor(a).localeCompare(relativePathFor(b)));
   return files;
+}
+
+function rememberRelativePath(file, path) {
+  fileRelativePaths.set(file, path);
+  try {
+    Object.defineProperty(file, "__relativePath", {
+      value: path,
+      enumerable: false,
+      configurable: true,
+    });
+  } catch (_error) {
+    // Some browser File implementations are not extensible. The WeakMap above
+    // still preserves hierarchy for manifest and JSON upload payloads.
+  }
 }

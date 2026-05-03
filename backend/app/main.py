@@ -325,6 +325,32 @@ def read_text_object(
     return {"key": safe_key, "content_type": content_type, "text": text}
 
 
+@app.get("/api/prefix")
+def prefix_delete_preview(
+    s3: Annotated[S3Service, Depends(get_s3)],
+    _: Annotated[None, Depends(verify_api_token)],
+    prefix: str,
+):
+    safe_prefix = clean_relative_path(prefix)
+    keys = s3.list_recursive_keys(safe_prefix)
+    return {"prefix": safe_prefix, "count": len(keys), "keys": keys}
+
+
+@app.delete("/api/prefix")
+def delete_prefix(
+    s3: Annotated[S3Service, Depends(get_s3)],
+    _: Annotated[None, Depends(verify_api_token)],
+    prefix: str,
+):
+    safe_prefix = clean_relative_path(prefix)
+    keys = s3.list_recursive_keys(safe_prefix)
+    if not keys:
+        raise HTTPException(status_code=404, detail="No files found in this prefix")
+
+    s3.delete_objects(keys)
+    return {"prefix": safe_prefix, "deleted": True, "deleted_count": len(keys), "keys": keys}
+
+
 @app.delete("/api/object")
 def delete_object(
     s3: Annotated[S3Service, Depends(get_s3)],
