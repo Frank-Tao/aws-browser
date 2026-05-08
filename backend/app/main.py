@@ -22,6 +22,7 @@ from .session_store import SessionStore, create_session_store
 from .upload_sessions import (
     ManifestFile,
     clean_relative_path,
+    is_ignored_upload_path,
     is_obsidian_path,
 )
 
@@ -142,6 +143,10 @@ def upload_manifest(
 
     for item in payload.files:
         path = clean_relative_path(item.path)
+        ignored, reason = is_ignored_upload_path(path)
+        if ignored:
+            skipped.append({"path": path, "reason": reason})
+            continue
         if payload.ignore_obsidian and is_obsidian_path(path):
             skipped.append({"path": path, "reason": ".obsidian ignored"})
             continue

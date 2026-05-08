@@ -81,5 +81,14 @@ def clean_relative_path(path: str, allow_empty: bool = False) -> str:
     return str(normalized).strip("/")
 
 
+def is_ignored_upload_path(path: str) -> tuple[bool, str]:
+    ignored_folders = {"node_modules", ".git"}
+    parts = set(PurePosixPath(path.replace("\\", "/")).parts)
+    for folder in ignored_folders:
+        if folder in parts:
+            return True, f"{folder} ignored"
+    return False, ""
+
+
 def is_obsidian_path(path: str) -> bool:
     return ".obsidian" in PurePosixPath(path.replace("\\", "/")).parts

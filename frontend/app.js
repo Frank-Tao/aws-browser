@@ -124,7 +124,8 @@ async function chooseFolder() {
 }
 
 function applySelectedFiles(files) {
-  state.files = files;
+  const filteredFiles = files.filter((file) => !isIgnoredUploadPath(relativePathFor(file)));
+  state.files = filteredFiles;
   state.fileStatuses.clear();
   state.selectedPaths = new Set();
   for (const file of state.files) {
@@ -1063,6 +1064,9 @@ async function collectFilesFromHandle(directoryHandle, prefix) {
   for await (const entry of directoryHandle.values()) {
     const nextPrefix = prefix ? `${prefix}/${entry.name}` : entry.name;
     if (entry.kind === "directory") {
+      if (isIgnoredUploadPath(nextPrefix)) {
+        continue;
+      }
       const nested = await collectFilesFromHandle(entry, nextPrefix);
       files.push(...nested);
       continue;
@@ -1087,4 +1091,10 @@ function rememberRelativePath(file, path) {
     // Some browser File implementations are not extensible. The WeakMap above
     // still preserves hierarchy for manifest and JSON upload payloads.
   }
+}
+
+function isIgnoredUploadPath(path) {
+  return String(path || "")
+    .split(/[\\/]+/)
+    .some((part) => part === "node_modules" || part === ".git");
 }

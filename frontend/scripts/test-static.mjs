@@ -13,6 +13,9 @@ const index = await readFile(join(dist, "index.html"), "utf8");
 if (!index.includes("/assets/app.js") || !index.includes("/config.js")) {
   throw new Error("dist/index.html does not reference expected runtime assets");
 }
+if (!index.includes('id="uploadAsJson" type="checkbox" checked')) {
+  throw new Error("JSON payload upload mode must be checked by default");
+}
 
 const config = await readFile(join(dist, "config.js"), "utf8");
 if (!config.includes("AWS_BROWSER_CONFIG")) {
@@ -22,6 +25,9 @@ if (!config.includes("AWS_BROWSER_CONFIG")) {
 const app = await readFile(join(dist, "assets", "app.js"), "utf8");
 if (!app.includes("collectFilesFromHandle(rootHandle, rootHandle.name)")) {
   throw new Error("folder picker must preserve the selected root folder in relative upload paths");
+}
+if (!app.includes('part === "node_modules" || part === ".git"')) {
+  throw new Error("local folder uploads must ignore node_modules and .git directories");
 }
 if (!app.includes("new WeakMap()") || !app.includes("fileRelativePaths.set(file,")) {
   throw new Error("folder picker paths must be stored outside File objects so JSON upload keeps hierarchy");

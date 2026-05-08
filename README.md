@@ -57,7 +57,7 @@ npm run deploy:vercel
 ## Upload Modes
 
 Upload tab now has:
-- `Use JSON payload upload mode` (default unchecked)
+- `Use JSON payload upload mode` (default checked)
 
 Behavior:
 - Unchecked: old multipart endpoint `POST /api/upload-file`

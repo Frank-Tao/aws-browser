@@ -62,6 +62,37 @@ def test_manifest_skips_obsidian_and_finish_reports_missing(monkeypatch):
     assert finish_response.json()["missing"] == ["notes/a.md"]
 
 
+def test_manifest_skips_node_modules_and_git(monkeypatch):
+    client = load_test_client(monkeypatch)
+    monkeypatch.setenv("S3_BUCKET", "test-bucket")
+    monkeypatch.setenv("UPLOAD_SESSION_STORE", "memory")
+    import backend.app.config as config
+
+    config.get_settings.cache_clear()
+
+    response = client.post(
+        "/api/upload-manifest",
+        json={
+            "destination_prefix": "test",
+            "ignore_obsidian": False,
+            "files": [
+                {"path": "project/src/app.js", "size": 12},
+                {"path": "project/node_modules/pkg/index.js", "size": 34},
+                {"path": "project/.git/config", "size": 56},
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total_files"] == 1
+    assert [item["path"] for item in payload["accepted"]] == ["project/src/app.js"]
+    assert payload["skipped"] == [
+        {"path": "project/node_modules/pkg/index.js", "reason": "node_modules ignored"},
+        {"path": "project/.git/config", "reason": ".git ignored"},
+    ]
+
+
 def test_list_requires_bucket(monkeypatch):
     client = load_test_client(monkeypatch)
 
